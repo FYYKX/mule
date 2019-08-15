@@ -34,19 +34,23 @@ public abstract class SourceWrapper<T, A> extends Source<T, A> {
     return delegate;
   }
 
-  public void onSuccess(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+  public void onSuccess(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context,
+                        CompletableCallback<Void> callback) {
     callback.complete(null);
   }
 
-  public void onError(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+  public void onError(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context,
+                      CompletableCallback<Void> callback) {
     callback.complete(null);
   }
 
-  public void onTerminate(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+  public void onTerminate(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context,
+                          CompletableCallback<Void> callback) {
     callback.complete(null);
   }
 
-  public void onBackPressure(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+  public void onBackPressure(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context,
+                             CompletableCallback<Void> callback) {
     callback.complete(null);
   }
 }

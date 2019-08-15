@@ -78,7 +78,8 @@ public interface ModuleFlowProcessingPhaseTemplate extends MessageProcessTemplat
    * @param exception exception thrown during the flow execution.
    * @param parameters the resolved set of parameters required to send the failure response.
    */
-  void sendFailureResponseToClient(MessagingException exception, Map<String, Object> parameters, CompletableCallback<Void> callback);
+  void sendFailureResponseToClient(MessagingException exception, Map<String, Object> parameters,
+                                   CompletableCallback<Void> callback);
 
   /**
    * Template method to be executed after the flow completes it's execution including any policy that may be applied.

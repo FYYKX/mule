@@ -128,9 +128,9 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
 
     watermarkObjectStore = objectStoreManager.getOrCreateObjectStore(formatKey(WATERMARK_OS_NAME_SUFFIX), unmanagedPersistent());
     executor = schedulerService.customScheduler(SchedulerConfig.config()
-                                                    .withMaxConcurrentTasks(1)
-                                                    .withWaitAllowed(true)
-                                                    .withName(formatKey("executor")));
+        .withMaxConcurrentTasks(1)
+        .withWaitAllowed(true)
+        .withName(formatKey("executor")));
 
     stopRequested.set(false);
     scheduler.schedule(executor, () -> poll(sourceCallback));
@@ -195,7 +195,7 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
         comparator = naturalOrder();
       } else {
         throw new IllegalStateException(format("Non comparable watermark values [%s, %s] were provided on source at flow '%s'. "
-                                                   + "Use comparable values or set a custom comparator. Watermark not updated.",
+            + "Use comparable values or set a custom comparator. Watermark not updated.",
                                                w1, w2, flowName));
 
       }
@@ -284,8 +284,8 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
         watermarkObjectStore.store(UPDATED_WATERMARK_ITEM_OS_KEY, updatedWatermark);
       } catch (ObjectStoreException e) {
         throw new MuleRuntimeException(
-            createStaticMessage("An error occurred while trying to update the updatedWatermark in the the object store"),
-            e);
+                                       createStaticMessage("An error occurred while trying to update the updatedWatermark in the the object store"),
+                                       e);
       }
     }
 
@@ -296,10 +296,10 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
         }
       } catch (ObjectStoreException e) {
         throw new MuleRuntimeException(
-            createStaticMessage("An error occurred while adding an item id to the object store" +
-                                    " of the items with the highest updated watermark for Item with ID [%s]",
-                                itemId),
-            e);
+                                       createStaticMessage("An error occurred while adding an item id to the object store" +
+                                           " of the items with the highest updated watermark for Item with ID [%s]",
+                                                           itemId),
+                                       e);
       }
     }
 
@@ -338,19 +338,19 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
             }
           } catch (ObjectStoreException e) {
             throw new MuleRuntimeException(
-                createStaticMessage("An error occurred while checking the previus watermark" +
-                                        " for an item id that was recently processed. Item with ID [%s]",
-                                    itemId),
-                e);
+                                           createStaticMessage("An error occurred while checking the previus watermark" +
+                                               " for an item id that was recently processed. Item with ID [%s]",
+                                                               itemId),
+                                           e);
           }
         } else if (compare == 0 && pollItem.getItemId().isPresent()) {
           try {
             accept = !(recentlyProcessedIds.contains(itemId) || idsOnUpdatedWatermark.contains(itemId));
           } catch (ObjectStoreException e) {
             throw new MuleRuntimeException(
-                createStaticMessage("An error occurred while checking the existance for Item with ID [%s]",
-                                    itemId),
-                e);
+                                           createStaticMessage("An error occurred while checking the existance for Item with ID [%s]",
+                                                               itemId),
+                                           e);
           }
         } else {
           accept = false;
@@ -367,9 +367,9 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
           }
         } catch (ObjectStoreException e) {
           throw new MuleRuntimeException(
-              createStaticMessage("An error occurred while updating the watermark for Item with ID [%s]",
-                                  itemId),
-              e);
+                                         createStaticMessage("An error occurred while updating the watermark for Item with ID [%s]",
+                                                             itemId),
+                                         e);
         }
       } else {
         if (LOGGER.isDebugEnabled()) {
@@ -438,7 +438,7 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
     private void validate() {
       if (result == null) {
         throw new IllegalStateException(format("Missing item Result. "
-                                                   + "Source in flow '%s' pushed an item with ID '%s' without configuring its Result",
+            + "Source in flow '%s' pushed an item with ID '%s' without configuring its Result",
                                                flowName, itemId));
       }
     }
@@ -487,9 +487,9 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
       watermarkObjectStore.store(WATERMARK_ITEM_OS_KEY, value);
     } catch (ObjectStoreException e) {
       throw new MuleRuntimeException(
-          createStaticMessage(format("Failed to update watermark value for message source at location '%s'. %s",
-                                     flowName, e.getMessage())),
-          e);
+                                     createStaticMessage(format("Failed to update watermark value for message source at location '%s'. %s",
+                                                                flowName, e.getMessage())),
+                                     e);
     }
   }
 
@@ -504,8 +504,8 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
           idsOnUpdatedWatermark.store(key, recentlyProcessedIds.retrieve(key));
         } catch (ObjectStoreException e) {
           throw new MuleRuntimeException(createStaticMessage(
-              "An error occurred while updating the watermark Ids. Failed to update key '%s' in Watermark-IDs ObjectStore: %s",
-              key, e.getMessage()),
+                                                             "An error occurred while updating the watermark Ids. Failed to update key '%s' in Watermark-IDs ObjectStore: %s",
+                                                             key, e.getMessage()),
                                          e);
         }
       });
@@ -524,9 +524,9 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
       }
     } catch (ObjectStoreException e) {
       throw new MuleRuntimeException(
-          createStaticMessage(format("Failed to fetch watermark for Message source at location '%s'. %s",
-                                     flowName, e.getMessage())),
-          e);
+                                     createStaticMessage(format("Failed to fetch watermark for Message source at location '%s'. %s",
+                                                                flowName, e.getMessage())),
+                                     e);
     }
   }
 
@@ -539,9 +539,9 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
       }
     } catch (ObjectStoreException e) {
       throw new MuleRuntimeException(
-          createStaticMessage(format("Failed to fetch watermark for Message source at location '%s'. %s",
-                                     flowName, e.getMessage())),
-          e);
+                                     createStaticMessage(format("Failed to fetch watermark for Message source at location '%s'. %s",
+                                                                flowName, e.getMessage())),
+                                     e);
     }
   }
 
@@ -555,7 +555,7 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
     if (!lock.tryLock()) {
       if (LOGGER.isDebugEnabled()) {
         LOGGER.debug("Source at flow '{}' is skipping processing of item '{}' because another thread or node already has a mule "
-                         + "lock on it", flowName, id);
+            + "lock on it", flowName, id);
       }
       return false;
     }
@@ -564,7 +564,7 @@ public class PollingSourceWrapper<T, A> extends SourceWrapper<T, A> {
       if (inflightIdsObjectStore.contains(id)) {
         if (LOGGER.isDebugEnabled()) {
           LOGGER.debug("Source at flow '{}' polled item '{}', but skipping it since it is already being processed in another "
-                           + "thread or node", flowName, id);
+              + "thread or node", flowName, id);
         }
         return false;
       } else {

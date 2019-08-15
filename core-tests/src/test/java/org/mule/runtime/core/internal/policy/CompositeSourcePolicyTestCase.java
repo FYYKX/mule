@@ -242,7 +242,10 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
 
     for (int i = 0; i < getRuntime().availableProcessors() * 2; ++i) {
       SourcePolicyTestUtils.<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>>block(
-          callback -> sourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
+                                                                                                callback -> sourcePolicy
+                                                                                                    .process(initialEvent,
+                                                                                                             sourceParametersProcessor,
+                                                                                                             callback));
     }
 
     assertThat(sourcePolicy.getNextOperationCount(), is(getRuntime().availableProcessors()));

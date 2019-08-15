@@ -11,6 +11,7 @@ import static java.util.Collections.emptyMap;
 import static java.util.Optional.empty;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static org.mule.runtime.core.api.event.EventContextFactory.create;
+import static org.mule.runtime.core.internal.policy.SourcePolicyTestUtils.block;
 
 import org.mule.AbstractBenchmark;
 import org.mule.runtime.api.message.Message;
@@ -70,14 +71,14 @@ public class CompositeSourcePolicyBenchmark extends AbstractBenchmark {
 
   @Benchmark
   @Threads(Threads.MAX)
-  public Either<SourcePolicyFailureResult, SourcePolicySuccessResult> source() throws Exception {
+  public Either<SourcePolicyFailureResult, SourcePolicySuccessResult> source() throws Throwable {
     CoreEvent event;
     Message.Builder messageBuilder = Message.builder().value(PAYLOAD);
     CoreEvent.Builder eventBuilder =
         CoreEvent.builder(create("", "", CONNECTOR_LOCATION, NullExceptionHandler.getInstance())).message(messageBuilder.build());
     event = eventBuilder.build();
 
-    return handler.process(event, sourceRpp).get();
+    return block(callback -> handler.process(event, sourceRpp, callback));
   }
 
 }

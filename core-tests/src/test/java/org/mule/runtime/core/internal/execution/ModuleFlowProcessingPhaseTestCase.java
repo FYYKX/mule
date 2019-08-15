@@ -32,6 +32,7 @@ import static org.mule.runtime.core.api.functional.Either.left;
 import static org.mule.runtime.core.api.functional.Either.right;
 import static org.mule.runtime.core.api.lifecycle.LifecycleUtils.initialiseIfNeeded;
 import static org.mule.runtime.core.internal.exception.ErrorTypeRepositoryFactory.createDefaultErrorTypeRepository;
+import static org.mule.runtime.core.internal.policy.SourcePolicyTestUtils.onCallback;
 import static org.mule.tck.junit4.matcher.EitherMatcher.leftMatches;
 import static org.mule.tck.junit4.matcher.EitherMatcher.rightMatches;
 import static org.mule.tck.junit4.matcher.EventMatcher.hasErrorType;
@@ -69,7 +70,6 @@ import org.mule.tck.size.SmallTest;
 
 import java.util.Collection;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -77,7 +77,6 @@ import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runners.Parameterized.Parameters;
-import org.mockito.stubbing.Answer;
 
 @SmallTest
 public class ModuleFlowProcessingPhaseTestCase extends AbstractMuleTestCase {
@@ -177,23 +176,6 @@ public class ModuleFlowProcessingPhaseTestCase extends AbstractMuleTestCase {
         .when(template).sendFailureResponseToClient(any(), any(), any());
 
     notifier = mock(PhaseResultNotifier.class);
-  }
-
-  private <T> Answer<T> onCallback(Consumer<CompletableCallback<T>> callbackConsumer) {
-    return onCallback(callbackConsumer, 2);
-  }
-
-  private <T> Answer<T> onCallback(Consumer<CompletableCallback<T>> callbackConsumer, int argIndex) {
-    return inv -> {
-      callbackConsumer.accept(inv.getArgument(argIndex));
-      return null;
-    };
-  }
-
-  @Test
-  public void success() throws Exception {
-    moduleFlowProcessingPhase.runPhase(template, context, notifier);
-    verifySuccess();
   }
 
   @Test
@@ -442,8 +424,8 @@ public class ModuleFlowProcessingPhaseTestCase extends AbstractMuleTestCase {
 
   private MessagingException buildFailingFlowException(final CoreEvent event, final Exception exception) {
     return new MessagingException(CoreEvent.builder(event)
-                                      .error(ErrorBuilder.builder(exception).errorType(ERROR_FROM_FLOW).build())
-                                      .build(), exception);
+        .error(ErrorBuilder.builder(exception).errorType(ERROR_FROM_FLOW).build())
+        .build(), exception);
   }
 
 }

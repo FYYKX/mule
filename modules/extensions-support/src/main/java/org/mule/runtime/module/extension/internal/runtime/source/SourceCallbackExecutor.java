@@ -28,6 +28,7 @@ interface SourceCallbackExecutor {
    * @param parameters the callback's parameters
    * @param context    a {@link SourceCallbackContext} @return the callback's result
    */
-  void execute(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback);
+  void execute(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context,
+               CompletableCallback<Void> callback);
 
 }

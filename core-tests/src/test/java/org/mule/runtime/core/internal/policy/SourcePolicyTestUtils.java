@@ -12,8 +12,11 @@ import org.mule.runtime.api.util.concurrent.Latch;
 
 import java.util.function.Consumer;
 
+import org.mockito.stubbing.Answer;
+
 public final class SourcePolicyTestUtils {
-  private SourcePolicyTestUtils(){}
+
+  private SourcePolicyTestUtils() {}
 
   public static <T> T block(Consumer<CompletableCallback<T>> callbackConsumer) throws Throwable {
     Reference<T> valueReference = new Reference<>();
@@ -37,10 +40,22 @@ public final class SourcePolicyTestUtils {
 
     callbackConsumer.accept(callback);
     latch.await();
-    if (valueReference.get() != null) {
-      return valueReference.get();
+
+    if (exceptionReference.get() != null) {
+      throw exceptionReference.get();
     }
 
-    throw exceptionReference.get();
+    return valueReference.get();
+  }
+
+  public static <T> Answer<T> onCallback(Consumer<CompletableCallback<T>> callbackConsumer) {
+    return onCallback(callbackConsumer, 2);
+  }
+
+  public static <T> Answer<T> onCallback(Consumer<CompletableCallback<T>> callbackConsumer, int argIndex) {
+    return inv -> {
+      callbackConsumer.accept(inv.getArgument(argIndex));
+      return null;
+    };
   }
 }
