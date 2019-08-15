@@ -14,6 +14,7 @@ import static org.mule.runtime.module.extension.internal.ExtensionProperties.SOU
 import static org.mule.runtime.module.extension.internal.ExtensionProperties.SOURCE_COMPLETION_CALLBACK_PARAM;
 
 import org.mule.runtime.api.component.Component;
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.api.exception.MuleRuntimeException;
 import org.mule.runtime.api.lifecycle.InitialisationException;
 import org.mule.runtime.api.meta.model.ExtensionModel;
@@ -38,7 +39,6 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
 import com.google.common.collect.ImmutableList;
@@ -108,26 +108,24 @@ class ReflectiveSourceCallbackExecutor implements SourceCallbackExecutor {
    * {@inheritDoc}
    */
   @Override
-  public CompletableFuture<Void> execute(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context) {
-    final CompletableFuture<Void> future = new CompletableFuture<>();
+  public void execute(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context,
+                      CompletableCallback<Void> callback) {
     if (async) {
       final ExecutionContext<SourceModel> executionContext =
-          createExecutionContext(event, parameters, context, new FutureSourceCompletionCallback(future));
+          createExecutionContext(event, parameters, context, new CompletableSourceCompletionCallback(callback));
       try {
         executor.execute(executionContext);
       } catch (Throwable t) {
-        future.completeExceptionally(wrapFatal(t));
+        callback.error(wrapFatal(t));
       }
     } else {
       try {
         executor.execute(createExecutionContext(event, parameters, context, null));
-        future.complete(null);
+        callback.complete(null);
       } catch (Throwable t) {
-        future.completeExceptionally(wrapFatal(t));
+        callback.error(wrapFatal(t));
       }
     }
-
-    return future;
   }
 
   private ExecutionContext<SourceModel> createExecutionContext(CoreEvent event,

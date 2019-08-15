@@ -14,6 +14,7 @@ import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mule.runtime.api.i18n.I18nMessageFactory.createStaticMessage;
+import static org.mule.runtime.core.internal.policy.SourcePolicyTestUtils.block;
 import static reactor.core.publisher.Mono.error;
 
 import org.mule.runtime.core.api.event.CoreEvent;
@@ -57,14 +58,14 @@ public class NoSourcePolicyTestCase extends AbstractMuleTestCase {
   }
 
   @Test
-  public void process() throws Exception {
+  public void process() throws Throwable {
     Map<String, Object> successParameters = responseParameters();
 
     when(respParametersProcessor.getSuccessfulExecutionResponseParametersFunction().apply(any()))
         .thenReturn(successParameters);
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> result =
-        noSourcePolicy.process(initialEvent, respParametersProcessor).get();
+        block(callback -> noSourcePolicy.process(initialEvent, respParametersProcessor, callback));
 
     assertThat(result.getLeft(), nullValue());
     assertThat(result.getRight().getEvent(), is(updatedEvent));
@@ -73,7 +74,7 @@ public class NoSourcePolicyTestCase extends AbstractMuleTestCase {
   }
 
   @Test
-  public void processWithFlowError() throws Exception {
+  public void processWithFlowError() throws Throwable {
     flowProcessor = coreEventPublisher -> Flux.from(coreEventPublisher)
         .flatMap(event -> {
           updatedEvent = event;
@@ -88,7 +89,7 @@ public class NoSourcePolicyTestCase extends AbstractMuleTestCase {
         .thenReturn(errorParameters);
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> result =
-        noSourcePolicy.process(initialEvent, respParametersProcessor).get();
+        block(callback -> noSourcePolicy.process(initialEvent, respParametersProcessor, callback));
 
     assertThat(result.getRight(), nullValue());
     assertThat(result.getLeft().getErrorResponseParameters().get(), is(errorParameters));
@@ -96,14 +97,14 @@ public class NoSourcePolicyTestCase extends AbstractMuleTestCase {
   }
 
   @Test
-  public void processAfterPolicyDispose() throws Exception {
+  public void processAfterPolicyDispose() throws Throwable {
     Map<String, Object> errorParameters = responseParameters();
     when(respParametersProcessor.getFailedExecutionResponseParametersFunction().apply(initialEvent))
         .thenReturn(errorParameters);
     noSourcePolicy.dispose();
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> result =
-        noSourcePolicy.process(initialEvent, respParametersProcessor).get();
+        block(callback -> noSourcePolicy.process(initialEvent, respParametersProcessor, callback));
 
     assertThat(result.getRight(), nullValue());
     assertThat(result.getLeft().getMessagingException().getEvent(), is(initialEvent));

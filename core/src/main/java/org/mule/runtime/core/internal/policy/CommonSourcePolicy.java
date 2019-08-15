@@ -13,9 +13,8 @@ import static org.mule.runtime.api.i18n.I18nMessageFactory.createStaticMessage;
 import static org.mule.runtime.core.api.functional.Either.left;
 import static org.mule.runtime.core.api.util.concurrent.FunctionalReadWriteLock.readWriteLock;
 import static org.mule.runtime.core.internal.event.EventQuickCopy.quickCopy;
-import static reactor.core.publisher.Mono.create;
 
-import org.mule.runtime.api.component.execution.ProcessCallback;
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
 import org.mule.runtime.core.api.policy.SourcePolicyParametersTransformer;
@@ -62,14 +61,12 @@ class CommonSourcePolicy {
 
   public void process(CoreEvent sourceEvent,
                       MessageSourceResponseParametersProcessor respParamProcessor,
-                      ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback) {
+                      CompletableCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback) {
 
     readWriteLock.withReadLock(lockReleaser -> {
       if (!disposed.get()) {
-        return create(callerSink -> {
-          policySink.get().next(quickCopy(sourceEvent, of(POLICY_SOURCE_PARAMETERS_PROCESSOR, respParamProcessor,
-                                                          POLICY_SOURCE_PROCESS_CALLBACK, callback)));
-        });
+        policySink.get().next(quickCopy(sourceEvent, of(POLICY_SOURCE_PARAMETERS_PROCESSOR, respParamProcessor,
+                                                        POLICY_SOURCE_PROCESS_CALLBACK, callback)));
       } else {
         MessagingException me = new MessagingException(createStaticMessage("Source policy already disposed"), sourceEvent);
 
@@ -106,7 +103,7 @@ class CommonSourcePolicy {
     recoverCallback(event).complete(result);
   }
 
-  private ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> recoverCallback(CoreEvent event) {
+  private CompletableCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> recoverCallback(CoreEvent event) {
     return ((InternalEvent) event).getInternalParameter(POLICY_SOURCE_PROCESS_CALLBACK);
   }
 

@@ -19,10 +19,8 @@ import static org.mule.runtime.core.api.exception.Errors.ComponentIdentifiers.Ha
 import static org.mule.runtime.core.api.exception.Errors.ComponentIdentifiers.Unhandleable.FLOW_BACK_PRESSURE;
 import static org.mule.runtime.core.api.functional.Either.left;
 import static org.mule.runtime.core.api.functional.Either.right;
-import static org.mule.runtime.core.internal.event.EventQuickCopy.quickCopy;
+import static org.mule.runtime.core.api.rx.Exceptions.unwrap;
 import static org.mule.runtime.core.internal.message.ErrorBuilder.builder;
-import static org.mule.runtime.core.internal.util.ConcurrencyUtils.bridge;
-import static org.mule.runtime.core.internal.util.ConcurrencyUtils.exceptionallyCompleted;
 import static org.mule.runtime.core.internal.util.FunctionalUtils.safely;
 import static org.mule.runtime.core.internal.util.InternalExceptionUtils.createErrorEvent;
 import static org.mule.runtime.core.internal.util.message.MessageUtils.toMessage;
@@ -31,11 +29,12 @@ import static org.mule.runtime.core.privileged.processor.MessageProcessors.apply
 import static org.mule.runtime.core.privileged.processor.MessageProcessors.processToApply;
 import static reactor.core.publisher.Flux.from;
 import static reactor.core.publisher.Mono.empty;
-import static reactor.core.publisher.Mono.fromFuture;
+import static reactor.core.publisher.Mono.fromCallable;
 import static reactor.core.publisher.Mono.just;
 import static reactor.core.publisher.Mono.when;
 
 import org.mule.runtime.api.component.Component;
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.api.component.location.ComponentLocation;
 import org.mule.runtime.api.component.location.ConfigurationComponentLocator;
 import org.mule.runtime.api.component.location.Location;
@@ -54,7 +53,6 @@ import org.mule.runtime.core.api.exception.NullExceptionHandler;
 import org.mule.runtime.core.api.functional.Either;
 import org.mule.runtime.core.api.processor.Processor;
 import org.mule.runtime.core.api.processor.strategy.ProcessingStrategy;
-import org.mule.runtime.core.api.rx.Exceptions;
 import org.mule.runtime.core.api.source.MessageSource;
 import org.mule.runtime.core.internal.construct.FlowBackPressureException;
 import org.mule.runtime.core.internal.exception.MessagingException;
@@ -76,15 +74,12 @@ import org.mule.runtime.core.privileged.execution.MessageProcessTemplate;
 import org.mule.runtime.extension.api.runtime.operation.Result;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
-import java.util.function.BiFunction;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -102,12 +97,6 @@ import org.reactivestreams.Publisher;
  */
 public class ModuleFlowProcessingPhase
     extends NotificationFiringProcessingPhase<ModuleFlowProcessingPhaseTemplate> implements Initialisable {
-
-  private static final String PHASE_CONTEXT = "moduleProcessingPhase.phaseContext";
-
-  private final Function<SourcePolicyFailureResult, CompletableFuture<PhaseContext>> onPolicyFailure = policyFailure();
-  private final BiFunction<PhaseContext, SourcePolicySuccessResult, CompletableFuture<PhaseContext>> onPolicySuccess =
-      policySuccess();
 
   private ErrorType sourceResponseGenerateErrorType;
   private ErrorType sourceResponseSendErrorType;
@@ -162,26 +151,20 @@ public class ModuleFlowProcessingPhase
     }
   }
 
-  private CompletableFuture<PhaseContext> onPolicyResult(
-      PhaseContext phaseContext,
-      Either<SourcePolicyFailureResult, SourcePolicySuccessResult> policyResult) {
+  private void onPolicyResult(PhaseContext phaseContext,
+                              Either<SourcePolicyFailureResult, SourcePolicySuccessResult> policyResult,
+                              CompletableCallback<Void> callback) {
 
-    CompletableFuture<PhaseContext> future;
-    if (policyResult.isLeft()) {
-      future = onPolicyFailure.apply(policyResult.getLeft());
-    } else {
-      future = onPolicySuccess.apply(phaseContext, policyResult.getRight());
-    }
-
-    return future.thenApply(ctx -> {
+    CompletableCallback<Void> effectiveCallback = callback.andThen(v -> {
       try {
-        ctx.phaseResultNotifier.phaseSuccessfully();
+        phaseContext.phaseResultNotifier.phaseSuccessfully();
       } finally {
-        ctx.responseCompletion.complete(null);
+        phaseContext.responseCompletion.complete(null);
       }
-
-      return ctx;
     });
+
+    policyResult.apply(failure -> policyFailure(phaseContext, failure, effectiveCallback),
+                       success -> policySuccess(phaseContext, success, effectiveCallback));
   }
 
   @Override
@@ -214,11 +197,6 @@ public class ModuleFlowProcessingPhase
                                                            event,
                                                            policy);
 
-        Map<String, Object> internalParams = new HashMap<>();
-        internalParams.put(PHASE_CONTEXT, phaseContext);
-        event = quickCopy(event, internalParams);
-        phaseContext.event = event;
-
         try {
           onMessageReceived(phaseContext);
           try {
@@ -229,19 +207,7 @@ public class ModuleFlowProcessingPhase
           }
           // Process policy and in turn flow emitting Either<SourcePolicyFailureResult,SourcePolicySuccessResult>> when
           // complete.
-          CompletableFuture<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> process =
-              phaseContext.sourcePolicy.process(phaseContext.event, phaseContext.template);
-
-          process.whenComplete((v, e) -> {
-            if (e != null) {
-              handleError(phaseContext, e);
-            } else {
-              onPolicyResult(phaseContext, v).exceptionally(t -> {
-                onError(t, phaseContext);
-                return phaseContext;
-              });
-            }
-          });
+          phaseContext.sourcePolicy.process(phaseContext.event, phaseContext.template, policyCallback(phaseContext));
         } catch (Throwable e) {
           e = unwrap(e);
           try {
@@ -253,14 +219,51 @@ public class ModuleFlowProcessingPhase
 
       } catch (Exception e) {
         template.sendFailureResponseToClient(
-            new MessagingExceptionResolver(messageSource)
-                .resolve(new MessagingException(event, e), muleContext),
-            template.getFailedExecutionResponseParametersFunction().apply(event))
-            .whenComplete((v, e2) -> phaseResultNotifier.phaseFailure(e));
+            new MessagingExceptionResolver(messageSource).resolve(new MessagingException(event, e), muleContext),
+            template.getFailedExecutionResponseParametersFunction().apply(event),
+            new CompletableCallback<Void>() {
+
+              @Override
+              public void complete(Void value) {
+                phaseResultNotifier.phaseFailure(e);
+              }
+
+              @Override
+              public void error(Throwable t) {
+                //TODO: log
+                phaseResultNotifier.phaseFailure(e);
+              }
+            });
       }
     } catch (Exception t) {
       phaseResultNotifier.phaseFailure(t);
     }
+  }
+
+  private CompletableCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> policyCallback(
+      PhaseContext phaseContext) {
+    return new CompletableCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>>() {
+
+      @Override
+      public void complete(Either<SourcePolicyFailureResult, SourcePolicySuccessResult> value) {
+        onPolicyResult(phaseContext, value, new CompletableCallback<Void>() {
+
+          @Override
+          public void complete(Void value) {
+          }
+
+          @Override
+          public void error(Throwable e) {
+            onError(e, phaseContext);
+          }
+        });
+      }
+
+      @Override
+      public void error(Throwable e) {
+        handleError(phaseContext, e);
+      }
+    };
   }
 
   private void handleError(PhaseContext phaseContext, Throwable e) {
@@ -268,19 +271,12 @@ public class ModuleFlowProcessingPhase
     if (e instanceof FlowBackPressureException) {
       // In case back pressure was fired, the exception will be propagated as a SourcePolicyFailureResult, wrapping inside
       // the back pressure exception
-      onPolicyResult(phaseContext, mapBackPressureExceptionToPolicyFailureResult(e, phaseContext.template, phaseContext.event));
+      onPolicyResult(phaseContext,
+                     mapBackPressureExceptionToPolicyFailureResult(e, phaseContext.template, phaseContext.event),
+                     CompletableCallback.empty());
     } else {
       onError(e, phaseContext);
     }
-  }
-
-  private Throwable unwrap(Throwable t) {
-    t = Exceptions.unwrap(t);
-    if (t instanceof ExecutionException || t instanceof CompletionException) {
-      t = t.getCause();
-    }
-
-    return t;
   }
 
   /**
@@ -333,104 +329,136 @@ public class ModuleFlowProcessingPhase
    * Process success by attempting to send a response to client handling the case where response sending fails or the resolution
    * of response parameters fails.
    */
-  private BiFunction<PhaseContext, SourcePolicySuccessResult, CompletableFuture<PhaseContext>> policySuccess() {
-    return (ctx, successResult) -> {
-      fireNotification(ctx.messageProcessContext.getMessageSource(), successResult.getEvent(),
-                       ctx.flowConstruct, MESSAGE_RESPONSE);
-      try {
-        Function<SourcePolicySuccessResult, CompletableFuture<Void>> sendResponseToClient =
-            result -> ctx.template.sendResponseToClient(result.getEvent(), result.getResponseParameters().get());
-        for (CompletableInterceptorSourceCallbackAdapter interceptor : additionalInterceptors) {
-          sendResponseToClient = interceptor.apply(ctx.messageSource, sendResponseToClient);
-        }
+  private void policySuccess(PhaseContext ctx, SourcePolicySuccessResult successResult, CompletableCallback<Void> callback) {
+    fireNotification(ctx.messageProcessContext.getMessageSource(), successResult.getEvent(),
+                     ctx.flowConstruct, MESSAGE_RESPONSE);
 
-        CompletableFuture<PhaseContext> completionFuture = new CompletableFuture<>();
+    BiConsumer<SourcePolicySuccessResult, CompletableCallback<Void>> sendResponseToClient = (result, responseCallback) ->
+        ctx.template.sendResponseToClient(result.getEvent(), result.getResponseParameters().get(), responseCallback);
 
-        sendResponseToClient.apply(successResult).thenApply(v -> {
-          onTerminate(ctx.flowConstruct, ctx.messageSource, ctx.terminateConsumer, right(successResult.getEvent()));
-          completionFuture.complete(ctx);
+    CompletableCallback<Void> responseCallback = new CompletableCallback<Void>() {
 
-          return ctx;
-        }).exceptionally(e -> {
-          bridge(completionFuture,
-                 policySuccessError(new SourceErrorException(successResult.getEvent(), sourceResponseSendErrorType, e),
-                                    successResult, ctx, ctx.flowConstruct, ctx.messageSource));
-          return ctx;
-        });
+      @Override
+      public void complete(Void value) {
+        onTerminate(ctx.flowConstruct, ctx.messageSource, ctx.terminateConsumer, right(successResult.getEvent()));
+        callback.complete(null);
+      }
 
-        return completionFuture;
-      } catch (Exception e) {
-        return policySuccessError(new SourceErrorException(successResult.getEvent(), sourceResponseGenerateErrorType, e),
-                                  successResult, ctx, ctx.flowConstruct, ctx.messageSource);
+      @Override
+      public void error(Throwable e) {
+        policySuccessError(new SourceErrorException(successResult.getEvent(), sourceResponseSendErrorType, e),
+                           successResult, ctx, ctx.flowConstruct, ctx.messageSource, callback);
       }
     };
+
+
+    try {
+      for (CompletableInterceptorSourceCallbackAdapter interceptor : additionalInterceptors) {
+        sendResponseToClient = interceptor.apply(ctx.messageSource, sendResponseToClient);
+      }
+
+      sendResponseToClient.accept(successResult, responseCallback);
+    } catch (Exception e) {
+      policySuccessError(new SourceErrorException(successResult.getEvent(), sourceResponseGenerateErrorType, e),
+                         successResult, ctx, ctx.flowConstruct, ctx.messageSource, callback);
+    }
   }
 
   /**
    * Process failure success by attempting to send an error response to client handling the case where error response sending
    * fails or the resolution of error response parameters fails.
    */
-  private Function<SourcePolicyFailureResult, CompletableFuture<PhaseContext>> policyFailure() {
-    return failureResult -> {
-      final PhaseContext ctx = PhaseContext.from(failureResult.getEvent());
-      fireNotification(ctx.messageProcessContext.getMessageSource(), failureResult.getMessagingException().getEvent(),
-                       ctx.flowConstruct, MESSAGE_ERROR_RESPONSE);
+  private void policyFailure(PhaseContext ctx, SourcePolicyFailureResult failureResult, CompletableCallback<Void> callback) {
+    fireNotification(ctx.messageProcessContext.getMessageSource(), failureResult.getMessagingException().getEvent(),
+                     ctx.flowConstruct, MESSAGE_ERROR_RESPONSE);
 
-      return sendErrorResponse(failureResult.getMessagingException(),
-                               event -> failureResult.getErrorResponseParameters().get(),
-                               ctx)
-          .thenApply(v -> {
-            onTerminate(ctx.flowConstruct,
-                        ctx.messageSource,
-                        ctx.terminateConsumer,
-                        left(failureResult.getMessagingException()));
-            return ctx;
-          });
-    };
+    CompletableCallback<Void> effectiveCallback = callback.before(new CompletableCallback<Void>() {
+
+      @Override
+      public void complete(Void value) {
+        onTerminate(ctx.flowConstruct,
+                    ctx.messageSource,
+                    ctx.terminateConsumer,
+                    left(failureResult.getMessagingException()));
+      }
+
+      @Override
+      public void error(Throwable e) {
+
+      }
+    });
+
+    sendErrorResponse(failureResult.getMessagingException(),
+                      event -> failureResult.getErrorResponseParameters().get(),
+                      ctx,
+                      effectiveCallback);
   }
 
   /*
    * Handle errors caused when attempting to process a success response by invoking flow error handler and disregarding the result
    * and sending an error response.
    */
-  private CompletableFuture<PhaseContext> policySuccessError(SourceErrorException see,
-                                                             SourcePolicySuccessResult successResult,
-                                                             PhaseContext ctx,
-                                                             FlowConstruct flowConstruct,
-                                                             MessageSource messageSource) {
+  private void policySuccessError(SourceErrorException see,
+                                  SourcePolicySuccessResult successResult,
+                                  PhaseContext ctx,
+                                  FlowConstruct flowConstruct,
+                                  MessageSource messageSource,
+                                  CompletableCallback<Void> callback) {
 
-    //TODO: Refactor this into ideally readable code, or a flux at the very least
     MessagingException messagingException =
         see.toMessagingException(flowConstruct.getMuleContext().getExceptionContextProviders(), messageSource);
 
-    return when(just(messagingException).flatMapMany(flowConstruct.getExceptionListener()).last()
-        .onErrorResume(e -> empty()),
-                fromFuture(sendErrorResponse(messagingException, successResult.createErrorResponseParameters(), ctx))
-                    .doOnSuccess(v -> onTerminate(flowConstruct, messageSource, ctx.terminateConsumer,
-                                                  left(messagingException))))
-                                                      .then(just(ctx))
-                                                      .toFuture();
+    CompletableCallback<Void> effectiveCallback = callback.before(new CompletableCallback<Void>() {
+
+      @Override
+      public void complete(Void value) {
+        onTerminate(flowConstruct, messageSource, ctx.terminateConsumer, left(messagingException));
+      }
+
+      @Override
+      public void error(Throwable e) {
+        // TODO: Log
+      }
+    });
+
+    when(just(messagingException).flatMapMany(
+        flowConstruct.getExceptionListener()).last().onErrorResume(e -> empty()),
+         fromCallable(() -> {
+           sendErrorResponse(messagingException, successResult.createErrorResponseParameters(), ctx, effectiveCallback);
+           return null;
+         }))
+        .subscribe();
   }
 
   /**
    * Send an error response. This may be due to an error being propagated from the Flow or due to a failure sending a success
    * response. Error caused by failures in the flow error handler do not result in an error message being sent.
    */
-  private CompletableFuture<Void> sendErrorResponse(MessagingException messagingException,
-                                                    Function<CoreEvent, Map<String, Object>> errorParameters,
-                                                    final PhaseContext ctx) {
+  private void sendErrorResponse(MessagingException messagingException,
+                                 Function<CoreEvent, Map<String, Object>> errorParameters,
+                                 final PhaseContext ctx,
+                                 CompletableCallback<Void> callback) {
 
     CoreEvent event = messagingException.getEvent();
 
     try {
-      return bridge(new CompletableFuture<>(),
-                    ctx.template.sendFailureResponseToClient(messagingException, errorParameters.apply(event)),
-                    e -> new SourceErrorException(builder(event)
+      ctx.template.sendFailureResponseToClient(messagingException, errorParameters.apply(event), new CompletableCallback<Void>() {
+
+        @Override
+        public void complete(Void value) {
+          callback.complete(value);
+        }
+
+        @Override
+        public void error(Throwable e) {
+          callback.error(new SourceErrorException(builder(event)
                                                       .error(builder(e).errorType(sourceErrorResponseSendErrorType).build())
                                                       .build(),
                                                   sourceErrorResponseSendErrorType, e));
+        }
+      });
     } catch (Exception e) {
-      return exceptionallyCompleted(new SourceErrorException(event, sourceErrorResponseGenerateErrorType, e, messagingException));
+      callback.error(new SourceErrorException(event, sourceErrorResponseGenerateErrorType, e, messagingException));
     }
   }
 
@@ -590,12 +618,7 @@ public class ModuleFlowProcessingPhase
     private final Consumer<Either<MessagingException, CoreEvent>> terminateConsumer;
     private final CompletableFuture<Void> responseCompletion;
     private final SourcePolicy sourcePolicy;
-
-    private CoreEvent event;
-
-    private static PhaseContext from(CoreEvent event) {
-      return ((InternalEvent) event).getInternalParameter(PHASE_CONTEXT);
-    }
+    private final CoreEvent event;
 
     private PhaseContext(ModuleFlowProcessingPhaseTemplate template,
                          MessageSource messageSource,

@@ -29,21 +29,10 @@ class ManagedCursorDecorator extends CursorStream {
 
   @Override
   public void close() throws IOException {
-<<<<<<< Updated upstream
     try {
       delegate.close();
     } finally {
       janitor.releaseCursor(delegate);
-=======
-    if (!closed) {
-      try {
-        delegate.close();
-      } finally {
-        closed = true;
-        //statistics.decrementOpenCursors();
-        janitor.releaseCursor(delegate);
-      }
->>>>>>> Stashed changes
     }
   }
 

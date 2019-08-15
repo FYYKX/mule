@@ -9,7 +9,7 @@ package org.mule.runtime.core.internal.policy;
 import static org.mule.runtime.core.api.functional.Either.left;
 import static org.mule.runtime.core.api.functional.Either.right;
 
-import org.mule.runtime.api.component.execution.ProcessCallback;
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.api.lifecycle.Disposable;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
@@ -85,7 +85,7 @@ public class NoSourcePolicy implements SourcePolicy, Disposable {
   @Override
   public void process(CoreEvent sourceEvent,
                       MessageSourceResponseParametersProcessor respParamProcessor,
-                      ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback) {
+                      CompletableCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback) {
     commonPolicy.process(sourceEvent, respParamProcessor, callback);
   }
 

@@ -23,6 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mule.runtime.core.internal.policy.SourcePolicyTestUtils.block;
 import static org.mule.runtime.dsl.api.component.config.DefaultComponentLocation.fromSingleComponent;
 import static reactor.core.publisher.Mono.error;
 
@@ -111,12 +112,12 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
   }
 
   @Test
-  public void singlePolicy() throws Exception {
+  public void singlePolicy() throws Throwable {
     compositeSourcePolicy = new CompositeSourcePolicy(asList(firstPolicy), flowExecutionProcessor,
                                                       of(sourcePolicyParametersTransformer), sourcePolicyProcessorFactory);
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> sourcePolicyResult =
-        compositeSourcePolicy.process(initialEvent, sourceParametersProcessor).get();
+        block(callback -> compositeSourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
 
     assertThat(sourcePolicyResult.isRight(), is(true));
     assertThat(sourcePolicyResult.getRight().getEvent().getMessage(), is(firstPolicyResultEvent.getMessage()));
@@ -131,13 +132,13 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
   }
 
   @Test
-  public void compositePolicy() throws Exception {
+  public void compositePolicy() throws Throwable {
     compositeSourcePolicy =
         new CompositeSourcePolicy(asList(firstPolicy, secondPolicy), flowExecutionProcessor,
                                   of(sourcePolicyParametersTransformer), sourcePolicyProcessorFactory);
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> sourcePolicyResult =
-        compositeSourcePolicy.process(initialEvent, sourceParametersProcessor).get();
+        block(callback -> compositeSourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
 
     assertThat(sourcePolicyResult.isRight(), is(true));
     assertThat(sourcePolicyResult.getRight().getEvent().getMessage(), is(firstPolicyResultEvent.getMessage()));
@@ -160,7 +161,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
   }
 
   @Test
-  public void policyExecutionFailureBeforeNextPropagates() throws Exception {
+  public void policyExecutionFailureBeforeNextPropagates() throws Throwable {
     RuntimeException policyException = new RuntimeException("policy failure");
     final Component policyComponent = mock(Component.class);
     when(policyComponent.getLocation()).thenReturn(fromSingleComponent("http-policy:proxy"));
@@ -183,7 +184,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
                                   of(sourcePolicyParametersTransformer), sourcePolicyProcessorFactory);
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> sourcePolicyResult =
-        compositeSourcePolicy.process(initialEvent, sourceParametersProcessor).get();
+        block(callback -> compositeSourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
     assertThat(sourcePolicyResult.isLeft(), is(true));
     assertThat(sourcePolicyResult.getLeft().getMessagingException().getCause(), is(policyException));
     verify(sourcePolicyParametersTransformer, never()).fromFailureResponseParametersToMessage(any());
@@ -191,7 +192,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
   }
 
   @Test
-  public void policyExecutionFailureAfterNextPropagates() throws Exception {
+  public void policyExecutionFailureAfterNextPropagates() throws Throwable {
     RuntimeException policyException = new RuntimeException("policy failure");
     final Component policyComponent = mock(Component.class);
     when(policyComponent.getLocation()).thenReturn(fromSingleComponent("http-policy:proxy"));
@@ -222,7 +223,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
                                   of(sourcePolicyParametersTransformer), sourcePolicyProcessorFactory);
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> sourcePolicyResult =
-        compositeSourcePolicy.process(initialEvent, sourceParametersProcessor).get();
+        block(callback -> compositeSourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
     assertThat(sourcePolicyResult.isLeft(), is(true));
     assertThat(sourcePolicyResult.getLeft().getMessagingException().getCause(), is(policyException));
     verify(sourcePolicyParametersTransformer, never()).fromFailureResponseParametersToMessage(any());
@@ -230,7 +231,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
   }
 
   @Test
-  public void reactorPipelinesReused() throws Exception {
+  public void reactorPipelinesReused() throws Throwable {
     InvocationsRecordingCompositeSourcePolicy.reset();
     final InvocationsRecordingCompositeSourcePolicy sourcePolicy =
         new InvocationsRecordingCompositeSourcePolicy(asList(firstPolicy), flowExecutionProcessor,
@@ -240,7 +241,8 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
     assertThat(sourcePolicy.getPolicyCount(), is(getRuntime().availableProcessors()));
 
     for (int i = 0; i < getRuntime().availableProcessors() * 2; ++i) {
-      sourcePolicy.process(initialEvent, sourceParametersProcessor).get();
+      SourcePolicyTestUtils.<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>>block(
+          callback -> sourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
     }
 
     assertThat(sourcePolicy.getNextOperationCount(), is(getRuntime().availableProcessors()));
@@ -248,7 +250,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
   }
 
   @Test
-  public void processAfterPolicyDispose() throws Exception {
+  public void processAfterPolicyDispose() throws Throwable {
     Map<String, Object> errorParameters = ImmutableMap.of("param", "value");
     when(sourcePolicyParametersTransformer.fromMessageToErrorResponseParameters(initialEvent.getMessage()))
         .thenReturn(errorParameters);
@@ -260,7 +262,7 @@ public class CompositeSourcePolicyTestCase extends AbstractCompositePolicyTestCa
     compositeSourcePolicy.dispose();
 
     Either<SourcePolicyFailureResult, SourcePolicySuccessResult> sourcePolicyResult =
-        compositeSourcePolicy.process(initialEvent, sourceParametersProcessor).get();
+        block(callback -> compositeSourcePolicy.process(initialEvent, sourceParametersProcessor, callback));
 
     assertThat(sourcePolicyResult.getRight(), nullValue());
     assertThat(sourcePolicyResult.getLeft().getMessagingException().getEvent(), is(initialEvent));

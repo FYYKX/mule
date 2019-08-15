@@ -7,14 +7,13 @@
 package org.mule.runtime.module.extension.internal.runtime.source;
 
 import static java.util.Collections.emptyMap;
-import static java.util.concurrent.CompletableFuture.completedFuture;
 
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
 import org.mule.runtime.core.internal.exception.MessagingException;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * {@code SourceCompletionHandler} that does nothing.
@@ -24,13 +23,13 @@ import java.util.concurrent.CompletableFuture;
 public class NullSourceCompletionHandler implements SourceCompletionHandler {
 
   @Override
-  public CompletableFuture<Void> onCompletion(CoreEvent event, Map<String, Object> parameters) {
-    return completedFuture(null);
+  public void onCompletion(CoreEvent event, Map<String, Object> parameters, CompletableCallback<Void> callback) {
+    callback.complete(null);
   }
 
   @Override
-  public CompletableFuture<Void> onFailure(MessagingException exception, Map<String, Object> parameters) {
-    return completedFuture(null);
+  public void onFailure(MessagingException exception, Map<String, Object> parameters, CompletableCallback<Void> callback) {
+    callback.error(exception);
   }
 
   @Override

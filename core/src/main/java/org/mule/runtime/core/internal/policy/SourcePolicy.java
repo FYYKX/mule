@@ -6,7 +6,7 @@
  */
 package org.mule.runtime.core.internal.policy;
 
-import org.mule.runtime.api.component.execution.ProcessCallback;
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
 import org.mule.runtime.core.api.processor.Processor;
@@ -31,6 +31,6 @@ public interface SourcePolicy {
    */
   void process(CoreEvent sourceEvent,
                MessageSourceResponseParametersProcessor messageSourceResponseParametersProcessor,
-               ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback);
+               CompletableCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback);
 
 }

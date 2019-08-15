@@ -10,6 +10,7 @@ import static org.mule.runtime.core.api.functional.Either.left;
 import static reactor.core.publisher.Flux.from;
 import static reactor.core.publisher.Mono.just;
 
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.api.exception.MuleException;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
@@ -23,7 +24,6 @@ import org.mule.runtime.core.internal.execution.SourceResultAdapter;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import org.reactivestreams.Publisher;
 
@@ -79,20 +79,21 @@ final class ModuleFlowProcessingTemplate implements ModuleFlowProcessingPhaseTem
   }
 
   @Override
-  public CompletableFuture<Void> sendResponseToClient(CoreEvent response, Map<String, Object> parameters) {
-    return completionHandler.onCompletion(response, parameters);
+  public void sendResponseToClient(CoreEvent response, Map<String, Object> parameters, CompletableCallback<Void> callback) {
+    completionHandler.onCompletion(response, parameters, callback);
   }
 
   @Override
-  public CompletableFuture<Void> sendFailureResponseToClient(MessagingException messagingException,
-                                                             Map<String, Object> parameters) {
-    return completionHandler.onFailure(messagingException, parameters);
+  public void sendFailureResponseToClient(MessagingException exception,
+                                          Map<String, Object> parameters,
+                                          CompletableCallback<Void> callback) {
+    completionHandler.onFailure(exception, parameters, callback);
   }
 
   @Override
   public void afterPhaseExecution(Either<MessagingException, CoreEvent> either) {
     either.apply((CheckedConsumer<MessagingException>) messagingException -> completionHandler
-        .onTerminate(left(messagingException)),
+                     .onTerminate(left(messagingException)),
                  (CheckedConsumer<CoreEvent>) event -> completionHandler.onTerminate(either));
   }
 

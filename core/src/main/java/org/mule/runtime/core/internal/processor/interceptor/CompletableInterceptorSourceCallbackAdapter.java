@@ -10,9 +10,11 @@ import static java.util.Optional.empty;
 import static java.util.Optional.of;
 import static org.mule.runtime.core.api.util.ClassUtils.withContextClassLoader;
 import static org.mule.runtime.core.internal.component.ComponentAnnotations.ANNOTATION_PARAMETERS;
+import static org.slf4j.LoggerFactory.getLogger;
 import static reactor.core.Exceptions.propagate;
 
 import org.mule.runtime.api.component.Component;
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.api.component.location.ComponentLocation;
 import org.mule.runtime.api.interception.ProcessorInterceptor;
 import org.mule.runtime.api.interception.SourceInterceptor;
@@ -25,12 +27,11 @@ import org.mule.runtime.core.internal.policy.SourcePolicySuccessResult;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Hooks the {@link ProcessorInterceptor}s for a {@link MessageSource} callback into the {@code Reactor} response handling
@@ -39,9 +40,9 @@ import org.slf4j.LoggerFactory;
  * @since 4.0
  */
 public class CompletableInterceptorSourceCallbackAdapter extends AbstractInterceptorAdapter implements
-    BiFunction<MessageSource, Function<SourcePolicySuccessResult, CompletableFuture<Void>>, Function<SourcePolicySuccessResult, CompletableFuture<Void>>> {
+    BiFunction<MessageSource, BiConsumer<SourcePolicySuccessResult, CompletableCallback<Void>>, BiConsumer<SourcePolicySuccessResult, CompletableCallback<Void>>> {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(CompletableInterceptorSourceCallbackAdapter.class);
+  private static final Logger LOGGER = getLogger(CompletableInterceptorSourceCallbackAdapter.class);
 
   private SourceInterceptorFactory interceptorFactory;
 
@@ -50,8 +51,9 @@ public class CompletableInterceptorSourceCallbackAdapter extends AbstractInterce
   }
 
   @Override
-  public Function<SourcePolicySuccessResult, CompletableFuture<Void>> apply(MessageSource source,
-                                                                            Function<SourcePolicySuccessResult, CompletableFuture<Void>> next) {
+  public BiConsumer<SourcePolicySuccessResult, CompletableCallback<Void>> apply(MessageSource source,
+                                                                                BiConsumer<SourcePolicySuccessResult, CompletableCallback<Void>> next) {
+
     if (!isInterceptable(source)) {
       return next;
     }
@@ -61,24 +63,20 @@ public class CompletableInterceptorSourceCallbackAdapter extends AbstractInterce
       return next;
     }
 
-    return result -> {
-      final SourceInterceptor interceptor = interceptorFactory.get();
-      Map<String, String> dslParameters = (Map<String, String>) (source).getAnnotation(ANNOTATION_PARAMETERS);
+    final SourceInterceptor interceptor = interceptorFactory.get();
+    Map<String, String> dslParameters = (Map<String, String>) (source).getAnnotation(ANNOTATION_PARAMETERS);
 
+    return (result, callback) -> {
       SourcePolicySuccessResult interceptedBeforeResult =
           new SourcePolicySuccessResult(doBefore(interceptor, source, dslParameters).apply((InternalEvent) result.getEvent()),
                                         result.getResponseParameters(), result.getMessageSourceResponseParametersProcessor());
 
       try {
-        CompletableFuture<Void> publisher = next.apply(interceptedBeforeResult);
+        next.accept(interceptedBeforeResult, callback);
         doAfter(interceptor, source, empty()).apply((InternalEvent) interceptedBeforeResult.getEvent());
-        return publisher;
       } catch (Throwable t) {
         doAfter(interceptor, source, of(t)).apply((InternalEvent) interceptedBeforeResult.getEvent());
-        CompletableFuture<Void> error = new CompletableFuture<>();
-        error.completeExceptionally(t);
-
-        return error;
+        callback.error(t);
       }
     };
   }

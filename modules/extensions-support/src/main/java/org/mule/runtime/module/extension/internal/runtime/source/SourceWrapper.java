@@ -6,14 +6,12 @@
  */
 package org.mule.runtime.module.extension.internal.runtime.source;
 
-import static java.util.concurrent.CompletableFuture.completedFuture;
-
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.extension.api.runtime.source.Source;
 import org.mule.runtime.extension.api.runtime.source.SourceCallbackContext;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * An abstract wrapper for {@link Source} implementations that allows to intercept
@@ -36,19 +34,19 @@ public abstract class SourceWrapper<T, A> extends Source<T, A> {
     return delegate;
   }
 
-  public CompletableFuture<Void> onSuccess(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context) {
-    return completedFuture(null);
+  public void onSuccess(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+    callback.complete(null);
   }
 
-  public CompletableFuture<Void> onError(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context) {
-    return completedFuture(null);
+  public void onError(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+    callback.complete(null);
   }
 
-  public CompletableFuture<Void> onTerminate(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context) {
-    return completedFuture(null);
+  public void onTerminate(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+    callback.complete(null);
   }
 
-  public CompletableFuture<Void> onBackPressure(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context) {
-    return completedFuture(null);
+  public void onBackPressure(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context, CompletableCallback<Void> callback) {
+    callback.complete(null);
   }
 }

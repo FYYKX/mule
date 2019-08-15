@@ -6,12 +6,12 @@
  */
 package org.mule.runtime.module.extension.internal.runtime.source;
 
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
 import org.mule.runtime.core.internal.exception.MessagingException;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Handles the result of flow processing.
@@ -29,14 +29,14 @@ public interface SourceCompletionHandler {
    *
    * @param event the result of the flow execution
    */
-  CompletableFuture<Void> onCompletion(CoreEvent event, Map<String, Object> parameters);
+  void onCompletion(CoreEvent event, Map<String, Object> parameters, CompletableCallback<Void> callback);
 
   /**
    * Invoked when a failure occurs during the flow processing
    *
    * @param exception the exception thrown during processing
    */
-  CompletableFuture<Void> onFailure(MessagingException exception, Map<String, Object> parameters);
+  void onFailure(MessagingException exception, Map<String, Object> parameters, CompletableCallback<Void> callback);
 
   void onTerminate(Either<MessagingException, CoreEvent> eventOrException) throws Exception;
 

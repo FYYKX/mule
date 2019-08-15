@@ -6,13 +6,11 @@
  */
 package org.mule.runtime.module.extension.internal.runtime.source;
 
-import static java.util.concurrent.CompletableFuture.completedFuture;
-
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.extension.api.runtime.source.SourceCallbackContext;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Null object implementation of {@link SourceCallbackExecutor}
@@ -29,7 +27,10 @@ public class NullSourceCallbackExecutor implements SourceCallbackExecutor {
    * @return {@code null}
    */
   @Override
-  public CompletableFuture<Void> execute(CoreEvent event, Map<String, Object> parameters, SourceCallbackContext context) {
-    return completedFuture(null);
+  public void execute(CoreEvent event,
+                      Map<String, Object> parameters,
+                      SourceCallbackContext context,
+                      CompletableCallback<Void> callback) {
+    callback.complete(null);
   }
 }

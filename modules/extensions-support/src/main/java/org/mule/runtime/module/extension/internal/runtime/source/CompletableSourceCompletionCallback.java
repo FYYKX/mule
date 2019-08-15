@@ -6,25 +6,26 @@
  */
 package org.mule.runtime.module.extension.internal.runtime.source;
 
+import org.mule.runtime.api.component.execution.CompletableCallback;
 import org.mule.runtime.extension.api.runtime.source.SourceCompletionCallback;
 
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Implementation of {@link SourceCompletionCallback} which works using a supplied {@link CompletableFuture}
+ * Implementation of {@link SourceCompletionCallback} which works using a supplied {@link CompletableCallback}
  *
  * @since 4.3.0
  */
-final class FutureSourceCompletionCallback implements SourceCompletionCallback {
+final class CompletableSourceCompletionCallback implements SourceCompletionCallback {
 
-  private final CompletableFuture<Void> future;
+  private final CompletableCallback<Void> callback;
 
   /**
    * Creates a new instance
-   * @param future a {@link CompletableFuture} to be completed through this callback
+   * @param callback a {@link CompletableFuture} to be completed through this callback
    */
-  public FutureSourceCompletionCallback(CompletableFuture<Void> future) {
-    this.future = future;
+  public CompletableSourceCompletionCallback(CompletableCallback<Void> callback) {
+    this.callback = callback;
   }
 
   /**
@@ -32,7 +33,7 @@ final class FutureSourceCompletionCallback implements SourceCompletionCallback {
    */
   @Override
   public void success() {
-    future.complete(null);
+    callback.complete(null);
   }
 
   /**
@@ -40,6 +41,6 @@ final class FutureSourceCompletionCallback implements SourceCompletionCallback {
    */
   @Override
   public void error(Throwable t) {
-    future.completeExceptionally(t);
+    callback.error(t);
   }
 }
