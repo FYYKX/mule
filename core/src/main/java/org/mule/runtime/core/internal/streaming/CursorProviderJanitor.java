@@ -97,6 +97,8 @@ public class CursorProviderJanitor {
       }
     } catch (Exception e) {
       LOGGER.warn("Exception was found trying to release cursor resources. Execution will continue", e);
+    } finally {
+      statistics.decrementOpenCursors();
     }
   }
 }
