@@ -9,6 +9,7 @@ package org.mule.runtime.core.internal.policy;
 import static org.mule.runtime.core.api.functional.Either.left;
 import static org.mule.runtime.core.api.functional.Either.right;
 
+import org.mule.runtime.api.component.execution.ProcessCallback;
 import org.mule.runtime.api.lifecycle.Disposable;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
@@ -17,7 +18,6 @@ import org.mule.runtime.core.internal.exception.MessagingException;
 import org.mule.runtime.core.internal.message.InternalEvent;
 import org.mule.runtime.core.internal.rx.FluxSinkRecorder;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 import reactor.core.publisher.Flux;
@@ -83,9 +83,10 @@ public class NoSourcePolicy implements SourcePolicy, Disposable {
   }
 
   @Override
-  public CompletableFuture<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> process(CoreEvent sourceEvent,
-                                                                                                 MessageSourceResponseParametersProcessor respParamProcessor) {
-    return commonPolicy.process(sourceEvent, respParamProcessor);
+  public void process(CoreEvent sourceEvent,
+                      MessageSourceResponseParametersProcessor respParamProcessor,
+                      ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback) {
+    commonPolicy.process(sourceEvent, respParamProcessor, callback);
   }
 
   @Override

@@ -11,11 +11,15 @@ import static java.lang.Runtime.getRuntime;
 import static java.util.Optional.empty;
 import static org.mule.runtime.api.i18n.I18nMessageFactory.createStaticMessage;
 import static org.mule.runtime.core.api.functional.Either.left;
+import static org.mule.runtime.core.api.util.concurrent.FunctionalReadWriteLock.readWriteLock;
 import static org.mule.runtime.core.internal.event.EventQuickCopy.quickCopy;
+import static reactor.core.publisher.Mono.create;
 
+import org.mule.runtime.api.component.execution.ProcessCallback;
 import org.mule.runtime.core.api.event.CoreEvent;
 import org.mule.runtime.core.api.functional.Either;
 import org.mule.runtime.core.api.policy.SourcePolicyParametersTransformer;
+import org.mule.runtime.core.api.util.concurrent.FunctionalReadWriteLock;
 import org.mule.runtime.core.internal.exception.MessagingException;
 import org.mule.runtime.core.internal.message.InternalEvent;
 import org.mule.runtime.core.internal.util.rx.FluxSinkSupplier;
@@ -25,11 +29,7 @@ import org.mule.runtime.core.privileged.event.BaseEventContext;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
 import reactor.core.publisher.FluxSink;
@@ -40,14 +40,11 @@ import reactor.core.publisher.FluxSink;
 class CommonSourcePolicy {
 
   public static final String POLICY_SOURCE_PARAMETERS_PROCESSOR = "policy.source.parametersProcessor";
-  public static final String POLICY_SOURCE_COMPLETABLE_FUTURE = "policy.source.completableFuture";
+  public static final String POLICY_SOURCE_PROCESS_CALLBACK = "policy.source.processCallback";
 
   private final FluxSinkSupplier<CoreEvent> policySink;
   private final AtomicBoolean disposed;
-  private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
-  private final Lock readLock = readWriteLock.readLock();
-  private final Lock writeLock = readWriteLock.writeLock();
-
+  private final FunctionalReadWriteLock readWriteLock = readWriteLock();
   private final Optional<SourcePolicyParametersTransformer> sourcePolicyParametersTransformer;
 
   CommonSourcePolicy(Supplier<FluxSink<CoreEvent>> sinkFactory) {
@@ -63,37 +60,29 @@ class CommonSourcePolicy {
     this.disposed = new AtomicBoolean(false);
   }
 
-  public CompletableFuture<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> process(CoreEvent sourceEvent,
-                                                                                                 MessageSourceResponseParametersProcessor respParamProcessor) {
-    CompletableFuture<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> future = new CompletableFuture<>();
+  public void process(CoreEvent sourceEvent,
+                      MessageSourceResponseParametersProcessor respParamProcessor,
+                      ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> callback) {
 
-    if (!disposed.get()) {
-      InternalEvent dispatchEvent = quickCopy(sourceEvent, of(POLICY_SOURCE_PARAMETERS_PROCESSOR, respParamProcessor,
-                                                              POLICY_SOURCE_COMPLETABLE_FUTURE, future));
-      FluxSink<CoreEvent> sink;
-      readLock.lock();
-      try {
-        sink = policySink.get();
-      } finally {
-        readLock.unlock();
-      }
-
+    readWriteLock.withReadLock(lockReleaser -> {
       if (!disposed.get()) {
-        // this should be inside the read lock... taking it out temporarily to trouble shoot weird issue
-        sink.next(dispatchEvent);
+        return create(callerSink -> {
+          policySink.get().next(quickCopy(sourceEvent, of(POLICY_SOURCE_PARAMETERS_PROCESSOR, respParamProcessor,
+                                                          POLICY_SOURCE_PROCESS_CALLBACK, callback)));
+        });
+      } else {
+        MessagingException me = new MessagingException(createStaticMessage("Source policy already disposed"), sourceEvent);
+
+        Supplier<Map<String, Object>> errorParameters = sourcePolicyParametersTransformer.isPresent()
+            ? (() -> sourcePolicyParametersTransformer.get().fromMessageToErrorResponseParameters(sourceEvent.getMessage()))
+            : (() -> respParamProcessor.getFailedExecutionResponseParametersFunction().apply(sourceEvent));
+
+        SourcePolicyFailureResult result = new SourcePolicyFailureResult(me, errorParameters);
+        callback.complete(left(result));
       }
-    } else {
-      MessagingException me = new MessagingException(createStaticMessage("Source policy already disposed"), sourceEvent);
 
-      Supplier<Map<String, Object>> errorParameters = sourcePolicyParametersTransformer.isPresent()
-          ? (() -> sourcePolicyParametersTransformer.get().fromMessageToErrorResponseParameters(sourceEvent.getMessage()))
-          : (() -> respParamProcessor.getFailedExecutionResponseParametersFunction().apply(sourceEvent));
-
-      SourcePolicyFailureResult result = new SourcePolicyFailureResult(me, errorParameters);
-      future.complete(left(result));
-    }
-
-    return future;
+      return null;
+    });
   }
 
   public MessageSourceResponseParametersProcessor getResponseParamsProcessor(CoreEvent event) {
@@ -105,7 +94,7 @@ class CommonSourcePolicy {
       ((BaseEventContext) event.getContext()).success(event);
     }
 
-    recoverFuture(event).complete(result);
+    recoverCallback(event).complete(result);
   }
 
   public void finishFlowProcessing(CoreEvent event, Either<SourcePolicyFailureResult, SourcePolicySuccessResult> result,
@@ -114,20 +103,17 @@ class CommonSourcePolicy {
       ((BaseEventContext) event.getContext()).error(error);
     }
 
-    recoverFuture(event).complete(result);
+    recoverCallback(event).complete(result);
   }
 
-  private CompletableFuture<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> recoverFuture(CoreEvent event) {
-    return ((InternalEvent) event).getInternalParameter(POLICY_SOURCE_COMPLETABLE_FUTURE);
+  private ProcessCallback<Either<SourcePolicyFailureResult, SourcePolicySuccessResult>> recoverCallback(CoreEvent event) {
+    return ((InternalEvent) event).getInternalParameter(POLICY_SOURCE_PROCESS_CALLBACK);
   }
 
   public void dispose() {
-    writeLock.lock();
-    try {
-      disposed.set(true);
+    readWriteLock.withWriteLock(() -> {
       policySink.dispose();
-    } finally {
-      writeLock.unlock();
-    }
+      disposed.set(true);
+    });
   }
 }
